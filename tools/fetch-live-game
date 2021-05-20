@@ -1,0 +1,137 @@
+#!/bin/bash
+
+VERSION=0.1
+current_play=
+
+usage () {
+
+    cat <<EOF
+Fetch an NHL report bouquet, with live snapshots if requested.
+Usage: $0 -h|--help | -V|--version | [ -v|--verbose | -d|--debug ] [ --live ] [--sleep SLEEP] GAME-ID
+Options:
+    -h|--help                Print this message and exit
+    -V|--version             Print the version
+    -v|--verbose             sets verbosity on
+    -d|--debug               sets debug mode on (turns set -x on)
+    -l|--live                continuously download files as in "live broadcast"
+    -s|--sleep SLEEP         sleep SLEEP seconds before polling again (default $DEFAULT_SLEEP)
+Arguments:
+    GAME-ID                  NHL game ID (4-digit season, 2-digit stage, 4-digit game id)
+EOF
+    exit $1;
+}
+
+version () {
+
+    echo "$VERSION"
+    exit 0
+}
+
+verbose () {
+
+    [[ "x$VERBOSE" == "x" ]] || echo "$1"
+}
+
+set_urls () {
+    if [[ "x$1" != "x" ]]; then
+        id="$1"
+    else
+        echo "Missing the ID"
+        usage 1
+    fi
+    [[ $id =~ ^[0-9]{10}$ ]] || (echo "ID must be a 10-digit number YYYYSSGGGG" && usage 2)
+    season=$(echo "$id" | cut -b1-4)
+    stage=$( echo "$id" | cut -b5-6)
+    game=$(  echo "$id" | cut -b7-10)
+    season1=$(echo "$season+1"|bc)
+    HTML_URL="http://www.nhl.com/scores/htmlreports/$season$season1/%s$stage$game.HTM"
+    JSON_URL="https://statsapi.web.nhl.com/api/v1/game/$id/feed/live"
+}
+
+get_sub_dir () {
+
+    current_play=$(jq -r .liveData.plays.currentPlay.about.eventIdx < "$JSON")
+    sub_dir=
+    if [[ $last_play != "$current_play" ]];
+    then
+        verbose "Switching From $last_play to $current_play"
+        period=$(jq -r .liveData.plays.currentPlay.about.period < "$JSON")
+        ts=$(jq -r .liveData.plays.currentPlay.about.periodTime < "$JSON")
+        sub_dir="$period-$ts-$current_play"
+    fi
+}
+
+download_files () {
+    mkdir -p "$sub_dir"
+    mv "$JSON" "$sub_dir"
+    cd "$sub_dir"
+    for filetype in $FILE_TYPES
+    do
+        # shellcheck disable=SC2059
+        html_url=$(printf "$HTML_URL" "$filetype")
+        HTML="$filetype.html"
+        curl -s "$html_url" > "$HTML"
+    done
+    cd ..
+}
+
+poll_game () {
+
+    while true
+    do
+        curl -s "$JSON_URL" > "$JSON"
+        status=$(jq -r .gameData.status.abstractGameState < "$JSON")
+        if [[ "x$LIVE" != "x" || "x$status" == "xFinal" ]];
+        then
+            if [[ "x$LIVE" != "x" ]];
+            then
+                get_sub_dir
+                [[ "x$sub_dir" == "x" ]] && (sleep 5) && continue
+            else
+                sub_dir="Final"
+            fi
+            download_files $sub_dir
+            if [[ "x$status" == "xFinal" ]];
+            then
+                echo "The game is over, I am done."
+                exit 0
+            fi
+        fi
+        last_play=$current_play
+        sleep "$SLEEP"
+    done
+}
+
+LIVE=
+VERBOSE=
+DEFAULT_SLEEP=5
+SLEEP=$DEFAULT_SLEEP
+
+opts=$(getopt --options hVvdls: --longoptions help,version,verbose,debug,live,sleep: -n "$0" -- "$@")
+eval set -- "$opts"
+
+while true;
+do
+    case "$1" in
+        -h | --help       ) usage   ;;
+        -V | --version    ) version ;;
+        -v | --verbose    ) VERBOSE=1;       shift ;;
+        -d | --debug      ) set -x;          shift ;;
+        -l | --live       ) LIVE=1;          shift ;;
+        -s | --sleep      ) SLEEP=$2; shift; shift ;;
+        -- ) shift; break ;;
+        * ) break ;;
+    esac
+done
+
+set -e
+set_urls "$1"
+
+FILE_TYPES="RO PL TH TV ES GS FC FS SS"
+JSON="LIVE.json"
+current_play=x
+
+mkdir -p "$id"
+cd "$id" || (echo "Can't create directory ./$id" && exit 3)
+last_play="z"
+poll_game
