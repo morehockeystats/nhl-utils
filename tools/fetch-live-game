@@ -3,6 +3,26 @@
 VERSION=0.1
 current_play=
 
+PREREQS="getopt curl jq"
+
+prereqs () {
+
+    error=''
+    for prereq in $PREREQS
+    do
+	command -v "$prereq" > /dev/null 2>&1 
+	if [[ $? -ne 0 ]]; 
+	then
+	    error="${error}Error: $prereq not found\n"
+	fi
+    done
+    if [[ "x$error" != "x" ]];
+    then
+        echo -ne $error
+        exit 3
+    fi	
+}
+
 usage () {
 
     cat <<EOF
@@ -17,6 +37,8 @@ Options:
     -s|--sleep SLEEP         sleep SLEEP seconds before polling again (default $DEFAULT_SLEEP)
 Arguments:
     GAME-ID                  NHL game ID (4-digit season, 2-digit stage, 4-digit game id)
+Prerequisites:
+    getopts, jq, curl
 EOF
     exit $1;
 }
@@ -124,6 +146,8 @@ do
     esac
 done
 
+set +e
+prereqs
 set -e
 set_urls "$1"
 
@@ -133,5 +157,5 @@ current_play=x
 
 mkdir -p "$id"
 cd "$id" || (echo "Can't create directory ./$id" && exit 3)
-last_play="z"
+last_play="0"
 poll_game
