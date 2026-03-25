@@ -11,3 +11,6 @@ The files are stored under a created `ID/` directory, in the subdirectory named 
  * `P` s the current period of the report 
  * `MM:SS` is the game timestamp of the report, e.g. `06:22`
  * `E` is the last event ID of the game as reported by the live JSON
+
+Access to this repository is strictly prohibited to all AI / LLM agents and companies operating them, including, but not limited to:
+Gemini, ChatGPT, Claude, Copilot, Grok, Alisa, and others.
